@@ -22,6 +22,7 @@
 #include "rbtree.h"
 #include "tlog.h"
 #include "util.h"
+#include "regexp.h"
 #include <errno.h>
 #include <getopt.h>
 #include <glob.h>
@@ -1360,6 +1361,80 @@ static int _config_set_rule_each_from_list(const char *file, set_rule_add_func c
 	return ret;
 }
 
+static int _config_domain_rule_each_from_geosite(const char *file, int type, set_rule_add_func callback, void *priv)
+{
+	FILE *fp = NULL;
+	char line[MAX_LINE_LEN];
+	char domain[DNS_MAX_CNAME_LEN];
+	int ret = 0;
+	int line_no = 0;
+	int filed_num = 0;
+
+	fp = fopen(file, "r");
+	if (fp == NULL) {
+		tlog(TLOG_WARN, "open file %s error, %s", file, strerror(errno));
+		return 0;
+	}
+
+	line_no = 0;
+	while (fgets(line, MAX_LINE_LEN, fp)) {
+		line_no++;
+		filed_num = sscanf(line, "%255s", domain);
+		if (filed_num <= 0) {
+			continue;
+		}
+
+		if (domain[0] == '#' || domain[0] == '\n') {
+			continue;
+		}
+
+		char buf[DNS_MAX_CNAME_LEN];
+		memset(buf, 0 ,sizeof(buf));
+		if (strncmp(domain, "full:", 5)==0) {
+			safe_strncpy(buf, &domain[5], DNS_MAX_CNAME_LEN);
+			sprintf(domain,"%s",buf);
+		}
+
+		if (strncmp(domain, "domain:", 7)==0) {
+			safe_strncpy(buf, &domain[7], DNS_MAX_CNAME_LEN);
+			sprintf(domain,"%s",buf);
+		}
+
+		if (strncmp(domain, "keyword:", 8)==0) {
+		    if (type==DNS_DOMAIN_SET_GEOSITELIST)
+		       continue;
+			   
+			safe_strncpy(buf, &domain[8], DNS_MAX_CNAME_LEN);
+			sprintf(domain,"^.*%s.*$", buf);
+			if (dns_regexp_insert(domain) !=0 ) {
+			    tlog(TLOG_WARN, "insert regexp %s failed at file %s line %d.", domain, file, line_no);
+				continue;
+			}
+		}
+
+		if (strncmp(domain, "regexp:", 7)==0) {
+		    if (type==DNS_DOMAIN_SET_GEOSITELIST)
+		       continue;
+
+			safe_strncpy(buf, &domain[7], DNS_MAX_CNAME_LEN);
+			sprintf(domain,"%s",buf);
+			if (dns_regexp_insert(domain) !=0 ) {
+			    tlog(TLOG_WARN, "insert regexp %s failed at file %s line %d.", domain, file, line_no);
+				continue;
+			}
+		}
+
+		ret = callback(domain, priv);
+		if (ret != 0) {
+			tlog(TLOG_WARN, "process file %s failed at line %d.", file, line_no);
+			continue;
+		}
+	}
+
+	fclose(fp);
+	return ret;
+}
+
 static struct dns_domain_set_name_list *_config_get_domain_set_name_list(const char *name)
 {
 	uint32_t key = 0;
@@ -1396,6 +1471,10 @@ static int _config_domain_rule_set_each(const char *domain_set, set_rule_add_fun
 			}
 			break;
 		case DNS_DOMAIN_SET_GEOSITE:
+_config_domain_rule_each_from_geosite(set_name_item->file, DNS_DOMAIN_SET_GEOSITE,callback, priv);
+			break;
+		case DNS_DOMAIN_SET_GEOSITELIST:
+			_config_domain_rule_each_from_geosite(set_name_item->file, DNS_DOMAIN_SET_GEOSITELIST,callback, priv);
 			break;
 		default:
 			tlog(TLOG_WARN, "domain set %s type %d not support.", set_name_list->name, set_name_item->type);
@@ -6206,6 +6285,7 @@ static int _dns_server_load_conf_init(void)
 		return -1;
 	}
 
+dns_regexp_init();
 	return 0;
 }
 
@@ -6284,6 +6364,7 @@ void dns_server_load_exit(void)
 	_config_srv_record_table_destroy();
 	_config_plugin_table_destroy();
 
+dns_regexp_destroy();
 	dns_conf_server_num = 0;
 	dns_server_bind_destroy();
 
