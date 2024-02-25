@@ -168,7 +168,7 @@ int dns_regexp_match(const char *domain, char *regexp)
 				return 0;
 
 			case 0:
-				tlog(TLOG_INFO, "domain %s not match regexp: %s", domain, dns_regexp->regexp);
+				//tlog(TLOG_INFO, "domain %s not match regexp: %s", domain, dns_regexp->regexp);
 				break;
 
 			default:
