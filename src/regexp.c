@@ -99,7 +99,7 @@ int _dns_regexp_insert(char *regexp, struct list_head *head)
       	goto errout;
 	}
 	
-	//tlog(TLOG_WARN, "compile regexp: %s", regexp);
+	//tlog(TLOG_INFO, "compile regexp: %s", regexp);
 	safe_strncpy(dns_regexp->regexp, regexp, DNS_MAX_REGEXP_LEN);
 	list_add_tail(&dns_regexp->list, head);
 	
@@ -168,7 +168,7 @@ int dns_regexp_match(const char *domain, char *regexp)
 				return 0;
 
 			case 0:
-				//tlog(TLOG_INFO, "domain %s not match regexp: %s", domain, dns_regexp->regexp);
+				tlog(TLOG_INFO, "domain %s not match regexp: %s", domain, dns_regexp->regexp);
 				break;
 
 			default:
