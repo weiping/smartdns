@@ -376,6 +376,32 @@ int is_private_addr(const unsigned char *addr, int addr_len)
 	return 0;
 }
 
+int is_private_addr_sockaddr(struct sockaddr *addr, socklen_t addr_len)
+{
+	switch (addr->sa_family) {
+	case AF_INET: {
+		struct sockaddr_in *addr_in = NULL;
+		addr_in = (struct sockaddr_in *)addr;
+		return is_private_addr((const unsigned char *)&addr_in->sin_addr.s_addr, IPV4_ADDR_LEN);
+	} break;
+	case AF_INET6: {
+		struct sockaddr_in6 *addr_in6 = NULL;
+		addr_in6 = (struct sockaddr_in6 *)addr;
+		if (IN6_IS_ADDR_V4MAPPED(&addr_in6->sin6_addr)) {
+			return is_private_addr(addr_in6->sin6_addr.s6_addr + 12, IPV4_ADDR_LEN);
+		} else {
+			return is_private_addr(addr_in6->sin6_addr.s6_addr, IPV6_ADDR_LEN);
+		}
+	} break;
+	default:
+		goto errout;
+		break;
+	}
+
+errout:
+	return 0;
+}
+
 int getaddr_by_host(const char *host, struct sockaddr *addr, socklen_t *addr_len)
 {
 	struct addrinfo hints;
@@ -1038,7 +1064,7 @@ int netlink_get_neighbors(int family,
 			continue;
 		}
 
-		int nlh_len = len;
+		uint32_t nlh_len = len;
 		for (nlh = (struct nlmsghdr *)buf; NLMSG_OK(nlh, nlh_len); nlh = NLMSG_NEXT(nlh, nlh_len)) {
 			ndm = NLMSG_DATA(nlh);
 			struct rtattr *rta = RTM_RTA(ndm);

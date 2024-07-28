@@ -3130,10 +3130,10 @@ static void _dns_server_ping_result(struct ping_host_struct *ping_host, const ch
 			return;
 		}
 
-		if (is_ipv6_ready) {
-			if (error == EADDRNOTAVAIL || errno == EACCES) {
+		if (is_ipv6_ready == 1 && (error == EADDRNOTAVAIL || errno == EACCES)) {
+			if (is_private_addr_sockaddr(addr, addr_len) == 0) {
 				is_ipv6_ready = 0;
-				tlog(TLOG_ERROR, "IPV6 is not ready, disable all ipv6 feature, recheck after %ds",
+				tlog(TLOG_WARN, "IPV6 is not ready, disable all ipv6 feature, recheck after %ds",
 					 IPV6_READY_CHECK_TIME);
 			}
 		}
@@ -3584,26 +3584,29 @@ static int _dns_server_ip_rule_check(struct dns_request *request, struct dns_ip_
 		goto rule_not_found;
 	}
 
-	rule_flags = container_of(ip_rules->rules[IP_RULE_FLAGS], struct ip_rule_flags, head);
-	if (rule_flags != NULL) {
-		if (rule_flags->flags & IP_RULE_FLAG_BOGUS) {
-			request->rcode = DNS_RC_NXDOMAIN;
-			request->has_soa = 1;
-			request->force_soa = 1;
-			_dns_server_setup_soa(request);
-			goto nxdomain;
-		}
-
-		/* blacklist-ip */
-		if (rule_flags->flags & IP_RULE_FLAG_BLACKLIST) {
-			if (result_flag & DNSSERVER_FLAG_BLACKLIST_IP) {
-				goto match;
+	struct dns_ip_rule *rule = ip_rules->rules[IP_RULE_FLAGS];
+	if (rule != NULL) {
+		rule_flags = container_of(rule, struct ip_rule_flags, head);
+		if (rule_flags != NULL) {
+			if (rule_flags->flags & IP_RULE_FLAG_BOGUS) {
+				request->rcode = DNS_RC_NXDOMAIN;
+				request->has_soa = 1;
+				request->force_soa = 1;
+				_dns_server_setup_soa(request);
+				goto nxdomain;
 			}
-		}
 
-		/* ignore-ip */
-		if (rule_flags->flags & IP_RULE_FLAG_IP_IGNORE) {
-			goto skip;
+			/* blacklist-ip */
+			if (rule_flags->flags & IP_RULE_FLAG_BLACKLIST) {
+				if (result_flag & DNSSERVER_FLAG_BLACKLIST_IP) {
+					goto match;
+				}
+			}
+
+			/* ignore-ip */
+			if (rule_flags->flags & IP_RULE_FLAG_IP_IGNORE) {
+				goto skip;
+			}
 		}
 	}
 
@@ -4375,7 +4378,10 @@ static int _dns_server_get_answer(struct dns_server_post_context *context)
 					continue;
 				}
 
-				_dns_server_context_add_ip(context, addr_map->ip_addr);
+				if (addr_map != NULL) {
+					_dns_server_context_add_ip(context, addr_map->ip_addr);
+				}
+
 				if (request->has_ip == 1) {
 					continue;
 				}
