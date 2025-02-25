@@ -5087,6 +5087,7 @@ static int _dns_server_process_local_ptr(struct dns_request *request)
 	prefix_t prefix;
 	radix_node_t *node = NULL;
 	struct local_addr_cache_item *addr_cache_item = NULL;
+	struct dns_nameserver_rule *ptr_nameserver_rule;
 
 	if (_dns_server_parser_addr_from_apra(request->domain, ptr_addr, &ptr_addr_len, sizeof(ptr_addr)) != 0) {
 		/* Determine if the smartdns service is in effect. */
@@ -5126,6 +5127,11 @@ static int _dns_server_process_local_ptr(struct dns_request *request)
 	}
 
 out:
+	ptr_nameserver_rule = _dns_server_get_dns_rule(request, DOMAIN_RULE_NAMESERVER);
+	if (ptr_nameserver_rule != NULL && ptr_nameserver_rule->group_name[0] != 0) {
+		goto errout;
+	}
+
 	if (found == 0 && _dns_server_is_private_address(ptr_addr, ptr_addr_len) == 0) {
 		request->has_soa = 1;
 		_dns_server_setup_soa(request);
@@ -5975,6 +5981,14 @@ static int _dns_server_process_cname(struct dns_request *request)
 		check_request = check_request->parent_request;
 	}
 
+	/* query cname domain  */
+	if (child_request->has_cname_loop == 1 && strncasecmp(request->domain, cname->cname, DNS_MAX_CNAME_LEN) == 0) {
+		request->has_cname_loop = 0;
+		request->domain_rule.rules[DOMAIN_RULE_CNAME] = NULL;
+		tlog(TLOG_DEBUG, "query cname domain %s", request->domain);
+		goto out;
+	}
+
 	child_group_name = _dns_server_get_request_server_groupname(child_request);
 	if (child_group_name) {
 		/* reset dns group and setup child request domain group again when do query.*/
@@ -5993,13 +6007,21 @@ static int _dns_server_process_cname(struct dns_request *request)
 	return 1;
 
 errout:
-
 	if (child_request) {
 		request->child_request = NULL;
 		_dns_server_request_release(child_request);
 	}
 
 	return -1;
+
+out:
+	if (child_request) {
+		child_request->parent_request = NULL;
+		request->child_request = NULL;
+		_dns_server_request_release(child_request);
+		_dns_server_request_release(request);
+	}
+	return 0;
 }
 
 static enum DNS_CHILD_POST_RESULT
